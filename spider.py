@@ -19,52 +19,9 @@ from urllib.parse import urlparse
 import time
 import requests
 from bs4 import BeautifulSoup
+from loading import ft_progress
 
 ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
-
-
-def ft_progress(listy, bar_size=20, load_str="|\-/"):
-    if not isinstance(bar_size, int):
-        bar_size = 20
-    load_str = str(load_str)
-    str_size = len(load_str)
-    start_time = time.time()
-    size = len(listy)
-    width = len(str(size))
-    prog_str = '>'.ljust(bar_size)
-    next_step = 1 / bar_size
-    other_step = 0.2 / bar_size
-    load_char = load_str[0]
-    j = 1
-    for i, item in enumerate(listy):
-        progress = (i + 1) / size
-        if progress > next_step:
-            while next_step < progress:
-                prog_str = '=' + prog_str[0:-1]
-                next_step += 1 / bar_size
-        if progress > other_step:
-            load_char = load_str[j % str_size]
-            j += 1
-            other_step += 0.2 / bar_size
-        diff_time = time.time() - start_time
-        remain_time = (1 - progress) * (diff_time / progress)
-        if remain_time > 60:
-            remain_time /= 60
-            remain_time = f"{remain_time:6.2f} min"
-        else:
-            remain_time = f"{remain_time:6.2f} s  "
-        if diff_time > 60:
-            diff_time /= 60
-            diff_time = f"{diff_time:6.2f} min"
-        else:
-            diff_time = f"{diff_time:6.2f} s  "
-        if i == size:
-            load_char = 'OK!'
-        print(
-            f"\r-> ETA: {remain_time} [{prog_str[0:int(bar_size / 2)]} {progress * 100:6.2f}% {prog_str[int(bar_size / 2):]}] {i + 1:{width}d}/{size:{width}d} | elapsed time: {diff_time}  {load_char}",
-            end='')
-
-        yield item
 
 
 class SpiderWeb:
@@ -107,16 +64,12 @@ class SpiderWeb:
                             continue
                         self.__create_spider(new_url, current_spider.depth - 1)
 
-            if counter % 10 == 0:
-                print("I'm still alive... For now... " + str(counter) + " we still have " + str(len(self.spiders)))
 
     def download_images(self):
         i = 0
         name = 'image'
-        print(len(self.images_to_download))
         self.images_to_download = dict.fromkeys(self.images_to_download).keys()
-        print(len(self.images_to_download))
-
+        print(f'Downloading images!')
         for current_url in ft_progress(self.images_to_download):
             dst_path = self.path_to_save + name + str(i)
             if os.path.exists(current_url) \
@@ -248,14 +201,16 @@ def parse_args(args_from_sys):
     if (parsed_args.l or parsed_args.oh) and not parsed_args.r:
         parser.error('-r argument is required when -l or -oh are present')
     if not os.path.exists(parsed_args.URL) \
-            and not os.path.isfile(parsed_args.URL) \
-            and not os.path.splitext(parsed_args.URL)[-1] == '.html':
+            or not os.path.isfile(parsed_args.URL) \
+            or not os.path.splitext(parsed_args.URL)[-1] == '.html':
         try:
+            response = requests.get(parsed_args.URL)
+        except:
+            parser.error('URL passed is not valid')
+        else:
             parsed_url = urlparse(parsed_args.URL)
             if not parsed_url.scheme:
                 parsed_args.URL = "https://" + parsed_args.URL
-        except:
-            parser.error('URL passed is not valid')
     return parsed_args
 
 
@@ -264,11 +219,13 @@ if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     my_web = SpiderWeb(args.URL, args.p, args.r, args.l, args.oh)
     my_web.deploy_spiders()
-    my_web.download_images()
     end_time = time.time()
     elapsed_time = end_time - start_time
 
-    print(f"\nElapsed time: {elapsed_time:.2f} seconds")
-    print(f'Visited URLs -> {len(my_web.visited_list)}:')
-    print(f'Images URLs -> {len(my_web.images_to_download)}:')
+    print(f"\nScrap time: {elapsed_time:.2f} seconds")
+    my_web.download_images()
+
+
+    print(f'\nVisited URLs -> {len(my_web.visited_list)}')
+    print(f'Images URLs -> {len(my_web.images_to_download)}')
 #  print(my_web)
