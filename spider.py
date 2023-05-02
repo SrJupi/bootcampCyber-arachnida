@@ -200,6 +200,8 @@ def parse_args(args_from_sys):
     parsed_args = parser.parse_args()
     if (parsed_args.l or parsed_args.oh) and not parsed_args.r:
         parser.error('-r argument is required when -l or -oh are present')
+    if parsed_args.l is not None and parsed_args.l <= 0:
+        parser.error('-l must be bigger than 0')
     if not os.path.exists(parsed_args.URL) \
             or not os.path.isfile(parsed_args.URL) \
             or not os.path.splitext(parsed_args.URL)[-1] == '.html':
