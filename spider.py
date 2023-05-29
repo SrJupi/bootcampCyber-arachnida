@@ -27,12 +27,12 @@ ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 
 
 class SpiderWeb:
-    def __init__(self, initial_URL, path_to_save, is_recursive, recursive_depth, is_hostname):
+    def __init__(self, initial_URL, path_to_save, is_recursive, recursive_depth):
         self.initial_URL = initial_URL
         self.path_to_save = path_to_save
         self.is_recursive = is_recursive
         self.recursive_depth = recursive_depth
-        self.is_hostname = is_hostname
+        self.hostname = self.__get_hostname()
         self.added_to_spiders = set()
         self.spiders = Queue()
         self.visited_list = []
@@ -42,7 +42,7 @@ class SpiderWeb:
         self.spiders.put((self.initial_URL, self.recursive_depth))
         self.added_to_spiders.add(self.initial_URL)
         self.__check_path()
-        self.__check_valid_hostname()
+
 
     def __str__(self):
         return '\n'.join([f"{k} = {v}" for k, v in self.__dict__.items()])
@@ -54,8 +54,8 @@ class SpiderWeb:
                 continue
             current_spider = self.__create_spider(current_spider[0], current_spider[1])
             try:
-                new_urls, new_images = current_spider.run()
                 self.visited_list.append(current_spider.URL)
+                new_urls, new_images = current_spider.run()             
             except Exception as msg:
                 self.errors.append((f'Error on {current_spider.URL}', msg))
             else:
@@ -64,7 +64,7 @@ class SpiderWeb:
                     for new_url in new_urls:
                         if new_url in self.added_to_spiders:
                             continue
-                        if self.is_hostname and not self.__check_is_hostname(new_url):
+                        if not self.__check_is_hostname(new_url):
                             continue
                         self.added_to_spiders.add(new_url)
                         self.spiders.put((new_url, current_spider.depth - 1))
@@ -139,36 +139,33 @@ class SpiderWeb:
         return spider
 
     def __check_is_hostname(self, new_url):
-        hostname = urlsplit(self.initial_URL).hostname
-        try:
-            new_hostname = urlsplit(new_url).hostname
-        except ValueError:
-            return False
+        if os.path.isfile(new_url):
+            new_hostname = os.path.dirname(new_url)
         else:
-            if hostname == new_hostname:
-                return True
-            else:
+            try:
+                new_hostname = urlsplit(new_url).hostname
+            except ValueError:
                 return False
+        if self.hostname == new_hostname:
+            return True
+        else:
+            return False
 
-    def __check_valid_hostname(self):
-        if self.is_hostname:
-            if urlsplit(self.initial_URL).hostname is None:
-                print(f"{self.initial_URL} does not have a hostname so it cannot be used without -loh flag")
-                ans = input(
-                    'Do you want to exit or do you want to activate the -loh flag?\n(E)xit or (A)ctivate >> ')
-                while ans.upper() != 'E' and ans.upper() != 'A':
-                    ans = input('(E)xit or (A)ctivate >> ')
-                if ans.upper() == 'E':
-                    exit()
-                if ans.upper() == 'A':
-                    self.is_hostname = False
-            else:
-                try:
-                    response = requests.get(self.initial_URL)
-                    if 'Location' in response.headers:
-                        self.initial_URL = response.headers['Location']
-                except:
-                    pass
+    def __get_hostname(self):
+        if os.path.isfile(self.initial_URL):
+            self.hostname = os.path.dirname(self.initial_URL)
+        elif urlsplit(self.initial_URL).netloc is None:
+            raise ValueError("Original URL does not have a hostname!")
+        else:
+            try:
+                response = requests.get(self.initial_URL)
+                if 'Location' in response.headers:
+                    self.initial_URL = response.headers['Location']
+                    self.__get_hostname()
+                else:
+                    self.hostname = urlsplit(self.initial_URL).netloc
+            except:
+                raise ValueError("Original URL does not is valid!")
                 
 
 
@@ -206,47 +203,38 @@ class Spider:
         new_images = []
 
         for link in links:
-            try:
-                if link['href'] != '':
-                    tmp = link['href']
-                    split = urlparse(tmp)
-                    if not bool(split.netloc) and bool(urlparse(self.URL).hostname):
-                        tmp = urlparse(self.URL).scheme + '://' + urlparse(self.URL).hostname + tmp
-                    new_links.append(tmp)
-            except KeyError:
-                pass
+            if hasattr(link, 'href') and link['href'] != '':
+                new_links.append(self.__get_full_path(link['href']))
         for image in images:
-            try:
-                if image['src'] != '':
-                    tmp = image['src']
-                    split = urlparse(tmp)
-                    if not bool(split.netloc) and bool(urlparse(self.URL).hostname):
-                        tmp = urlparse(self.URL).scheme + '://' + urlparse(self.URL).hostname + tmp
-                    new_images.append(tmp)
-            except KeyError:
-                pass
+            if hasattr(image, 'src') and image['src'] != '':
+                new_images.append(self.__get_full_path(image['src']))
 
         return new_links, new_images
+    
+    ### EDIT TO ACCEPT FILES
+    def __get_full_path(self, url):
+        tmp = url
+        split = urlparse(tmp)
+        if not bool(split.netloc) and bool(urlparse(self.URL).hostname):
+            tmp = urlparse(self.URL).scheme + '://' + urlparse(self.URL).hostname + tmp
+        return tmp
 
 
 def parse_args(args_from_sys):
-    parser = argparse.ArgumentParser(description='Extract all images from a website',
-                                     )
+    parser = argparse.ArgumentParser(description='Extract all images from a website')
     parser.add_argument('-r', action='store_true',
                         help='recursively downloads the images in a URL received as a parameter')
     parser.add_argument('-l', type=int, nargs='?', const=5,
                         metavar='N',
                         help='indicates the maximum depth level of the recursive download. Default: 5')
-    parser.add_argument('-loh', action='store_false',
-                        help='indicates to Leave the Original Hostname in recursive download. I WOULD NOT TRY IT WITHOUT -L OF MAXIMUM 3')
     parser.add_argument('-p', type=str, nargs='?',
                         default='./data/', metavar='PATH',
                         help='indicates the path where the downloaded files will be saved. Default: ./data/')
     parser.add_argument('URL', type=str, metavar='URL',
                         help='URL to be scrapped')
     parsed_args = parser.parse_args()
-    if (parsed_args.l or not parsed_args.loh) and not parsed_args.r:
-        parser.error('-r argument is required when -l or -loh are present')
+    if parsed_args.l and not parsed_args.r:
+        parser.error('-r argument is required when -l are present')
     if parsed_args.l is not None and parsed_args.l <= 0:
         parser.error('-l must be bigger than 0')
     if not os.path.exists(parsed_args.URL) \
@@ -262,7 +250,7 @@ def parse_args(args_from_sys):
 if __name__ == '__main__':
     start_time = time.time()
     args = parse_args(sys.argv[1:])
-    my_web = SpiderWeb(args.URL, args.p, args.r, args.l, args.loh)
+    my_web = SpiderWeb(args.URL, args.p, args.r, args.l)
     my_web.deploy_spiders()
     end_time = time.time()
     elapsed_time = end_time - start_time
