@@ -15,11 +15,9 @@ import os
 import datetime
 import stat
 from PIL import Image, ExifTags
-import pypdf
-import docx
 
-ALLOWED_IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
-ALLOWED_EXTENSIONS = ['.pdf', '.docx'] + ALLOWED_IMG_EXTENSIONS
+
+ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 
 
 def file_with_allowed_extension(filename):
@@ -58,7 +56,7 @@ File permissions:           {stat.filemode(stat_info.st_mode)}''')
 def print_exif_metadata(current_file):
     image = Image.open(current_file)
     exif_data = image.getexif()
-    print('EXIF Metadata:')
+    print('EXIF Metadata:\n')
     if exif_data:
         for tag_id in exif_data:
             tag_name = ExifTags.TAGS.get(tag_id, tag_id)
@@ -67,26 +65,6 @@ def print_exif_metadata(current_file):
     else:
         print('No EXIF metadata')
     image.close()
-
-
-def print_pdf_metadata(current_file):
-    pdf_file = open(current_file, 'rb')
-    pdf_reader = pypdf.PdfReader(pdf_file)
-    metadata = pdf_reader.metadata
-    if metadata:
-        for k, v in metadata.items():
-            print(f"{k}: {v}")
-    else:
-        print('No Metadata')
-    pdf_file.close()
-
-
-def print_docx_metadata(current_file):
-    doc = docx.Document(current_file)
-    metadata = doc.core_properties
-    for arg in dir(metadata):
-        if arg[0] != '_':
-            print(f'{arg}: {getattr(metadata, arg)}')
 
 
 def print_all_metadata(current_file):
@@ -98,13 +76,7 @@ def print_all_metadata(current_file):
     print_os_metadata(current_file)
     if os.access(current_file, os.R_OK):
         print('~' * size)
-        ext = os.path.splitext(current_file)[-1].lower()
-        if ext in ALLOWED_IMG_EXTENSIONS:
-            print_exif_metadata(current_file)
-        elif ext == '.pdf':
-            print_pdf_metadata(current_file)
-        elif ext == '.docx':
-            print_docx_metadata(current_file)
+        print_exif_metadata(current_file)
     msg = f'End of file: {current_file}'
     print(f'\n{msg:^{size}}')
     print('Ʌ' * size)
