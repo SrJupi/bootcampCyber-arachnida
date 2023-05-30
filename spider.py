@@ -16,7 +16,6 @@ import shutil
 import sys
 from urllib.parse import urlsplit
 from urllib.parse import urlparse
-from urllib.parse import urljoin
 import time
 import requests
 from bs4 import BeautifulSoup
@@ -30,18 +29,16 @@ class SpiderWeb:
     def __init__(self, initial_URL, path_to_save, is_recursive, recursive_depth):
         self.initial_URL = initial_URL
         self.path_to_save = os.path.abspath(path_to_save)+'/'
-        self.is_recursive = is_recursive
-        self.recursive_depth = recursive_depth
+        self.__check_path()
+        self.__check_recursive_depth(is_recursive, recursive_depth)
         self.__get_hostname()
         self.added_to_spiders = set()
         self.spiders = Queue()
         self.visited_list = []
         self.images_to_download = set()
         self.errors = []
-        self.__check_recursive_depth()
         self.spiders.put((self.initial_URL, self.recursive_depth))
         self.added_to_spiders.add(self.initial_URL)
-        self.__check_path()
 
 
     def __str__(self):
@@ -60,14 +57,15 @@ class SpiderWeb:
                 self.errors.append((f'Error on {current_spider.URL}', msg))
             else:
                 self.images_to_download.update(new_images)
-                if current_spider.depth - 1 >= 0:
-                    for new_url in new_urls:
-                        if new_url in self.added_to_spiders:
-                            continue
-                        if not self.__check_is_hostname(new_url):
-                            continue
-                        self.added_to_spiders.add(new_url)
-                        self.spiders.put((new_url, current_spider.depth - 1))
+                if current_spider.depth - 1 < 0:
+                    continue
+                for new_url in new_urls:
+                    if new_url in self.added_to_spiders:
+                        continue
+                    if not self.__check_is_hostname(new_url):
+                        continue
+                    self.added_to_spiders.add(new_url)
+                    self.spiders.put((new_url, current_spider.depth - 1))
 
 
     def download_images(self):
@@ -77,8 +75,7 @@ class SpiderWeb:
         for current_url in ft_progress(self.images_to_download):
             name = current_url.split('/')[-1]
             if len(name) > 200:
-                size = len(name)
-                name = name[size-200:]
+                name = name[len(name)-200:]
             dst_path = f'{self.path_to_save}{i:0{num_width}} - {name}'
             if os.path.exists(current_url) \
                     and os.path.isfile(current_url) \
@@ -96,34 +93,37 @@ class SpiderWeb:
                 except Exception as msg:
                     self.errors.append(f'Error on {current_url}: {msg}')
                 else:
-                    if response.status_code == 200:
-                        content_type = response.headers.get('Content-Type')
-                        if content_type and 'image' in content_type:
-                            image_type = '.' + content_type[len('image/'):]
-                            if image_type.lower() in ALLOWED_EXTENSIONS:
-                                for ext in ALLOWED_EXTENSIONS:
-                                    index = dst_path.lower().find(ext)
-                                    if index != -1:
-                                        dst_path = dst_path[:index+len(image_type)]
-                                        break
-                                if index == -1:
-                                    dst_path = dst_path + image_type.lower()
-                                try:
-                                    with open(dst_path, 'wb') as dst_file:
-                                        dst_file.write(response.content)
-                                        i += 1
-                                except Exception as msg:
-                                    self.errors.append(f'Error on {current_url}. File not opened - {msg}')
-                            else:
-                                self.errors.append(f"{current_url} is not a {', '.join(ALLOWED_EXTENSIONS)} file")
-                    else:
+                    if response.status_code != 200:
                         self.errors.append(f'{current_url} response was {response.status_code}')
+                        continue
+                    content_type = response.headers.get('Content-Type')
+                    if not content_type and 'image' not in content_type:
+                        self.errors.append(f'{current_url} does not have a content type or it is not a image')
+                        continue
+                    image_type = '.' + content_type[len('image/'):]
+                    if image_type.lower() not in ALLOWED_EXTENSIONS:
+                        self.errors.append(f"{current_url} is not a {', '.join(ALLOWED_EXTENSIONS)} file")
+                        continue
+                    index = dst_path.lower().find(image_type)
+                    if index != -1:
+                        dst_path = dst_path[:index+len(image_type)]
+                    elif index == -1:
+                        dst_path = dst_path + image_type.lower()
+                    try:
+                        with open(dst_path, 'wb') as dst_file:
+                            dst_file.write(response.content)
+                            i += 1
+                    except Exception as msg:
+                        self.errors.append(f'Error on {current_url}. File not opened - {msg}')
+
         self.total_downloaded = i
 
-    def __check_recursive_depth(self):
-        if self.is_recursive and self.recursive_depth is None:
+    def __check_recursive_depth(self, is_recursive, recursive_depth):
+        if is_recursive and recursive_depth is None:
             self.recursive_depth = 5
-        if not self.is_recursive:
+        elif is_recursive:
+            self.recursive_depth = recursive_depth
+        else:
             self.recursive_depth = 0
 
     def __check_path(self):
