@@ -29,10 +29,10 @@ ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 class SpiderWeb:
     def __init__(self, initial_URL, path_to_save, is_recursive, recursive_depth):
         self.initial_URL = initial_URL
-        self.path_to_save = path_to_save
+        self.path_to_save = os.path.abspath(path_to_save)+'/'
         self.is_recursive = is_recursive
         self.recursive_depth = recursive_depth
-        self.hostname = self.__get_hostname()
+        self.__get_hostname()
         self.added_to_spiders = set()
         self.spiders = Queue()
         self.visited_list = []
@@ -72,13 +72,14 @@ class SpiderWeb:
 
     def download_images(self):
         i = 0
+        num_width = len(str(len(self.images_to_download)))
         print(f'Downloading images!')
         for current_url in ft_progress(self.images_to_download):
             name = current_url.split('/')[-1]
             if len(name) > 200:
                 size = len(name)
                 name = name[size-200:]
-            dst_path = f'{self.path_to_save}{name}'
+            dst_path = f'{self.path_to_save}{i:0{num_width}} - {name}'
             if os.path.exists(current_url) \
                     and os.path.isfile(current_url) \
                     and os.path.splitext(current_url)[-1] in ALLOWED_EXTENSIONS:
@@ -114,7 +115,7 @@ class SpiderWeb:
                                 except Exception as msg:
                                     self.errors.append(f'Error on {current_url}. File not opened - {msg}')
                             else:
-                                self.errors.append(f'{current_url} is not a {ALLOWED_EXTENSIONS}')
+                                self.errors.append(f"{current_url} is not a {', '.join(ALLOWED_EXTENSIONS)} file")
                     else:
                         self.errors.append(f'{current_url} response was {response.status_code}')
         self.total_downloaded = i
@@ -140,20 +141,25 @@ class SpiderWeb:
 
     def __check_is_hostname(self, new_url):
         if os.path.isfile(new_url):
-            new_hostname = os.path.dirname(new_url)
+            new_hostname = os.path.dirname(os.path.abspath(new_url))
+            if self.hostname in new_hostname:
+                return True
+            else:
+                return False
         else:
             try:
                 new_hostname = urlsplit(new_url).hostname
             except ValueError:
                 return False
-        if self.hostname == new_hostname:
-            return True
-        else:
-            return False
+            else:
+                if self.hostname == new_hostname:
+                    return True
+                else:
+                    return False
 
     def __get_hostname(self):
         if os.path.isfile(self.initial_URL):
-            self.hostname = os.path.dirname(self.initial_URL)
+            self.hostname = os.path.dirname(os.path.abspath(self.initial_URL))
         elif urlsplit(self.initial_URL).netloc is None:
             raise ValueError("Original URL does not have a hostname!")
         else:
@@ -194,30 +200,22 @@ class Spider:
             if response.status_code == 200 and 'text/html' in response.headers.get('Content-Type'):
                 soup = BeautifulSoup(response.content, 'html.parser')
             elif 'image' in response.headers.get('Content-Type'):
-                return [self.URL]
+                return [], [self.URL]
             else:
                 return [], []
-        images = soup.find_all('img')
-        links = soup.find_all('a')
-        new_links = []
-        new_images = []
+        images = soup.find_all('img', {'src': True})
+        images = [self.__get_full_path(image['src']) for image in images if image['src'] != '']
+        links = soup.find_all('a', {'href': True})
+        links = [self.__get_full_path(link['href']) for link in links if link['href'] != '']
+        return links, images
 
-        for link in links:
-            if hasattr(link, 'href') and link['href'] != '':
-                new_links.append(self.__get_full_path(link['href']))
-        for image in images:
-            if hasattr(image, 'src') and image['src'] != '':
-                new_images.append(self.__get_full_path(image['src']))
-
-        return new_links, new_images
     
-    ### EDIT TO ACCEPT FILES
     def __get_full_path(self, url):
-        tmp = url
-        split = urlparse(tmp)
-        if not bool(split.netloc) and bool(urlparse(self.URL).hostname):
-            tmp = urlparse(self.URL).scheme + '://' + urlparse(self.URL).hostname + tmp
-        return tmp
+        if not os.path.isfile(url):
+            split = urlparse(url)
+            if not bool(split.netloc) and bool(urlparse(self.URL).hostname):
+                url = urlparse(self.URL).scheme + '://' + urlparse(self.URL).hostname + url
+        return url
 
 
 def parse_args(args_from_sys):
@@ -256,16 +254,31 @@ if __name__ == '__main__':
     elapsed_time = end_time - start_time
 
     print(f"\nScrap time: {elapsed_time:.2f} seconds")
-    my_web.download_images()
+    ans = ''
+    downloaded = False
+    while (ans != '4'):
+        ans = input(f'''The website(s) were scrapped. What do you want to do?
+    1 - Download {len(my_web.images_to_download)} images
+    2 - See {len(my_web.visited_list)} URLs visited
+    3 - See {len(my_web.errors)} errors
+    4 - Exit
+    >>> ''')
+        if ans == '1':
+            if not downloaded:
+                my_web.download_images()
+                print()
+                downloaded = True
+            print(f"Images Saved on '{my_web.path_to_save}'\nDownloaded {my_web.total_downloaded} images of {len(my_web.images_to_download)} images found")
+        if ans == '2':
+            for site in my_web.visited_list:
+                print(site)
+        if ans == '3':
+            if len(my_web.errors) == 0:
+                print('No error happened!')
+            else:
+                for item in my_web.errors:
+                    print(item)
+        print()
 
-    print(f'\nVisited URLs -> {len(my_web.visited_list)}')
-    print(f'Images URLs -> {my_web.total_downloaded} / {len(my_web.images_to_download)}')
-    print(f'Errors found: {len(my_web.errors)}')
-    if len(my_web.errors) > 0:
-        ans = input('Do you want to see all the erros?\n(Y)es/(n)o >> ')
-        while (ans.lower() != 'y' and ans.lower() != 'n'):
-            ans = input('(Y)es/(n)o >> ')
-        if ans.lower() == 'y':
-            for item in my_web.errors:
-                print(item)
+            
 
