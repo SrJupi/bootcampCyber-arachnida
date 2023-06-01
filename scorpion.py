@@ -20,16 +20,26 @@ from PIL import Image, ExifTags
 ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
 def file_with_allowed_extension(filename):
     """Check if a file has an allowed extension"""
 
     ext = os.path.splitext(filename)[-1]
-    if ext.lower() not in ALLOWED_EXTENSIONS:
-        raise argparse.ArgumentTypeError(f"File extension on {filename} is not in {ALLOWED_EXTENSIONS}")
-    if not os.path.isfile(filename):
-        raise argparse.ArgumentTypeError(f"File {filename} not found!")
-    
-    return filename
+    if os.path.isfile(filename) and ext.lower() in ALLOWED_EXTENSIONS:
+        return True
+    return False
+ #   return filename
 
 
 def convert_bytes_to_human_readable(size_in_bytes):
@@ -68,7 +78,7 @@ def print_exif_metadata(current_file):
 
 
 def print_all_metadata(current_file):
-    msg = f'Start of file: {current_file}\n'
+    msg = f'Start of file: {bcolors.OKGREEN}{current_file}{bcolors.ENDC}\n'
     size = len(msg) * 2
     print('V' * size)
 
@@ -84,10 +94,12 @@ def print_all_metadata(current_file):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Search for EXIF data and other metadata.')
-    parser.add_argument('files', type=file_with_allowed_extension,
-                        metavar='FILE', nargs='+',
+    parser.add_argument('files', metavar='FILE', nargs='+',
                         help=f'{", ".join(ALLOWED_EXTENSIONS)} file(s) to be processed')
     args = parser.parse_args()
 
     for file in args.files:
-        print_all_metadata(file)
+        if file_with_allowed_extension(file):
+            print_all_metadata(file)
+        else:
+            print(f'\n{bcolors.FAIL}ERROR!{bcolors.ENDC}\n{bcolors.WARNING}{file}{bcolors.ENDC} is not a {", ".join(ALLOWED_EXTENSIONS)} file\n')

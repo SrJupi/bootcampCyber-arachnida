@@ -43,29 +43,29 @@ class SpiderWeb:
 
     def __str__(self):
         return '\n'.join([f"{k} = {v}" for k, v in self.__dict__.items()])
-
+    
     def deploy_spiders(self):
         while not self.spiders.empty():
             current_spider = self.spiders.get()
             if current_spider[0] in self.visited_list:
                 continue
+            self.visited_list.append(current_spider[0])
+            print(f">>>> I am still alive... Websites visited: {len(self.visited_list)}",end='\r')
             current_spider = self.__create_spider(current_spider[0], current_spider[1])
-            try:
-                self.visited_list.append(current_spider.URL)
+            try:     
                 new_urls, new_images = current_spider.run()             
             except Exception as msg:
                 self.errors.append((f'Error on {current_spider.URL}', msg))
             else:
                 self.images_to_download.update(new_images)
-                if current_spider.depth - 1 < 0:
-                    continue
-                for new_url in new_urls:
-                    if new_url in self.added_to_spiders:
-                        continue
-                    if not self.__check_is_hostname(new_url):
-                        continue
-                    self.added_to_spiders.add(new_url)
-                    self.spiders.put((new_url, current_spider.depth - 1))
+                if current_spider.depth - 1 >= 0:
+                    for new_url in new_urls:
+                        if new_url in self.added_to_spiders:
+                            continue
+                        if not self.__check_is_hostname(new_url):
+                            continue
+                        self.added_to_spiders.add(new_url)
+                        self.spiders.put((new_url, current_spider.depth - 1))
 
 
     def download_images(self):
@@ -77,8 +77,7 @@ class SpiderWeb:
             if len(name) > 200:
                 name = name[len(name)-200:]
             dst_path = f'{self.path_to_save}{i:0{num_width}} - {name}'
-            if os.path.exists(current_url) \
-                    and os.path.isfile(current_url) \
+            if os.path.isfile(current_url) \
                     and os.path.splitext(current_url)[-1] in ALLOWED_EXTENSIONS:
                 try:
                     with open(current_url, 'rb') as src_file:
@@ -147,15 +146,10 @@ class SpiderWeb:
             else:
                 return False
         else:
-            try:
-                new_hostname = urlsplit(new_url).hostname
-            except ValueError:
-                return False
+            if self.hostname in new_url:
+                return True
             else:
-                if self.hostname == new_hostname:
-                    return True
-                else:
-                    return False
+                return False
 
     def __get_hostname(self):
         if os.path.isfile(self.initial_URL):
@@ -169,7 +163,7 @@ class SpiderWeb:
                     self.initial_URL = response.headers['Location']
                     self.__get_hostname()
                 else:
-                    self.hostname = urlsplit(self.initial_URL).netloc
+                    self.hostname = self.initial_URL
             except:
                 raise ValueError("Original URL does not is valid!")
                 
@@ -189,8 +183,7 @@ class Spider:
     Returns:
         urls_list: list of all URLs found in the website
         images_list: list of all images URLs found in the website"""
-        if os.path.exists(self.URL) \
-                and os.path.isfile(self.URL) \
+        if os.path.isfile(self.URL) \
                 and os.path.splitext(self.URL)[-1] == '.html':
             with open(self.URL, 'rb') as f:
                 html = f.read()
@@ -201,6 +194,9 @@ class Spider:
                 soup = BeautifulSoup(response.content, 'html.parser')
             elif 'image' in response.headers.get('Content-Type'):
                 return [], [self.URL]
+            elif 'Location' in response.headers:
+                self.URL = response.headers['Location']
+                return self.run()
             else:
                 return [], []
         images = soup.find_all('img', {'src': True})
@@ -235,9 +231,8 @@ def parse_args(args_from_sys):
         parser.error('-r argument is required when -l are present')
     if parsed_args.l is not None and parsed_args.l <= 0:
         parser.error('-l must be bigger than 0')
-    if not os.path.exists(parsed_args.URL) \
-            or not os.path.isfile(parsed_args.URL) \
-            or not os.path.splitext(parsed_args.URL)[-1] == '.html':
+    if not os.path.isfile(parsed_args.URL) \
+        or not os.path.splitext(parsed_args.URL)[-1] == '.html':
         parsed_url = urlparse(parsed_args.URL)
         if not parsed_url.scheme:
             parsed_args.URL = "https://" + parsed_args.URL
